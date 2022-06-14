@@ -9,7 +9,7 @@ import torch
 import kornia
 import torchvision
 import torchvision.transforms as T
-
+from PIL import Image, ImageDraw
 
 def split(image):
     print("Split shape:", image.shape)
@@ -362,8 +362,9 @@ class SmartCrop(object):
             "skin": 0,
             "total": 0,
         }
-        target_data = target_image.getdata()
-        target_width, target_height = target_image.size
+        # target_data = target_image.getdata()
+        target_data = target_image.ravel().reshape(3, -1).T
+        target_width, target_height = target_image.shape[-2:]
 
         down_sample = self.score_down_sample
         inv_down_sample = 1 / down_sample
@@ -447,11 +448,18 @@ def main():
         result["top_crop"]["width"] + result["top_crop"]["x"],
         result["top_crop"]["height"] + result["top_crop"]["y"],
     )
+    print('BOX COORDINATES: ', box)
 
     if options.debug_file:
         analyse_image = result.pop("analyse_image")
         cropper.debug_crop(analyse_image, result["top_crop"]).save(options.debug_file)
         print(json.dumps(result))
+
+
+    print('TYPE AND SHAPE', type(image), image.shape)
+
+    image = T.ToPILImage()(image) #.crop(box).save(options.outputfile)
+
 
     cropped_image = image.crop(box)
     cropped_image.thumbnail((options.width, options.height), Image.ANTIALIAS)

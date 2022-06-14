@@ -15,12 +15,14 @@ from PIL.ImageFilter import Kernel
 def main():
     score_down_sample=8
     image = torchvision.io.read_image("./test.jpg")
-    print(image)
+    w, h = image.shape[-2:]
+    print(w ,h)
+    t_image = image.ravel().reshape(3, -1).T
 
     target_image = Image.open("./test.jpg")
     target_data = target_image.getdata()
-    for data in target_data:
-        print(data)
+
+
 
 
 
