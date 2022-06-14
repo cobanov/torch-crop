@@ -36,7 +36,7 @@ for batch_idx, (data, target) in enumerate(load_dataset()):
     # pickle data
     with open('data.pkl', 'wb') as f:
         pickle.dump(data, f)
-        
+
     # magnitude, edges = kornia.filters.canny(data)
     # for idx, image in enumerate(edges):
     #     torchvision.utils.save_image(image, f'./edges/edge_{batch_idx}_{idx}.png')

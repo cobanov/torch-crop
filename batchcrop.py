@@ -4,6 +4,7 @@ import argparse
 import json
 import math
 import sys
+import pickle
 
 import torch
 import kornia
@@ -59,7 +60,6 @@ class SmartCrop(object):
         self.rule_of_thirds = rule_of_thirds
         self.score_down_sample = score_down_sample
 
-
     def analyse(
         self,
         image,
@@ -84,7 +84,7 @@ class SmartCrop(object):
         # R=skin G=edge B=saturation
         edge_image = self.detect_edge(cie_image)
 
-        analyse_image = torch.stack((edge_image, edge_image, edge_image))
+        analyse_image = edge_image.clone()
         # T.ToPILImage()(analyse_image[0]).show()
         print("Anaylse image shape: ", analyse_image.shape)
 
@@ -95,8 +95,8 @@ class SmartCrop(object):
         score_image = T.functional.resize(
             score_image,
             (
+                int(math.ceil(image.shape[3] / self.score_down_sample)),
                 int(math.ceil(image.shape[2] / self.score_down_sample)),
-                int(math.ceil(image.shape[1] / self.score_down_sample)),
             ),
             antialias=True,
         )
@@ -134,35 +134,11 @@ class SmartCrop(object):
         step=8,
     ):
         """Not yet fully cleaned from https://github.com/hhatto/smartcrop.py."""
-        print("crop:", image.shape[1:])
-        scale = min(image.shape[2] / width, image.shape[1] / height)
-        print("After scale size:", scale)
-        crop_width = int(math.floor(width * scale))
-        crop_height = int(math.floor(height * scale))
-        print("After crop size:", crop_width, crop_height)
-        # img = 100x100, width = 95x95, scale = 100/95, 1/scale > min
-        # don't set minscale smaller than 1/scale
-        # -> don't pick crops that need upscaling
-        min_scale = min(max_scale, max(1 / scale, min_scale))
-
+        print("crop:", image.shape)
         prescale_size = 1
-        if prescale:
-            prescale_size = 1 / scale / min_scale
-            if prescale_size < 1:
-                image = image.clone()
-                image = T.functional.resize(
-                    image,
-                    (
-                        int(image.shape[2] * prescale_size),
-                        int(image.shape[1] * prescale_size),
-                    ),
-                    antialias=True,
-                )
+        crop_width = 500
+        crop_height = 500
 
-                crop_width = int(math.floor(crop_width * prescale_size))
-                crop_height = int(math.floor(crop_height * prescale_size))
-            else:
-                prescale_size = 1
 
         result = self.analyse(
             image,
@@ -195,8 +171,8 @@ class SmartCrop(object):
         step=8,
     ):
         image_width, image_height = (
-            image.shape[1],
             image.shape[2],
+            image.shape[3],
         )  # pytorch dims are (channels, height, width)
         print("image_width:", image_width, "image_height:", image_height)
         crops = []
@@ -229,14 +205,14 @@ class SmartCrop(object):
     def detect_edge(self, cie_image):
         # T.ToPILImage()(cie_image).show()
         edge_image = cie_image.clone()
-        edge_image.unsqueeze_(0)
+        # edge_image.unsqueeze_(0)
         _, edges = kornia.filters.canny(edge_image, kernel_size=(3, 3))
         # edges = kornia.filters.sobel(
         #     edge_image,
         # )
         # T.ToPILImage()(edges[0]).show()
         print(edges.shape)
-        return edges[0]
+        return edges
 
     def importance(self, crop, x, y):
         if (
@@ -268,7 +244,7 @@ class SmartCrop(object):
             "total": 0,
         }
         # target_data = target_image.getdata()
-        target_data = target_image.ravel().reshape(3, -1).T
+        target_data = target_image.ravel().reshape(3, -1).T #! Ravel icin batch processing hamlesi dusun
         target_width, target_height = target_image.shape[-2:]
 
         down_sample = self.score_down_sample
@@ -310,20 +286,17 @@ def parse_argument():
 
 
 def main():
-    options = parse_argument()
-    image = torchvision.io.read_image(options.inputfile)
-    print("Init image shape: ", image.shape)
-    # if image.mode != 'RGB' and image.mode != 'RGBA':
-    #     sys.stderr.write("{1} convert from mode='{0}' to mode='RGB'\n".format(
-    #         image.mode, options.inputfile))
-    #     new_image = Image.new('RGB', image.size)
-    #     new_image.paste(image)
-    #     image = new_image
+    # options = parse_argument()
+    # image = torchvision.io.read_image(options.inputfile)
+
+    # load data.pkl
+    with open("data.pkl", "rb") as f:
+        image = pickle.load(f)
+        print("Init image shape: ", image.shape)
+
 
     cropper = SmartCrop()
-    result = cropper.crop(
-        image, width=100, height=int(options.height / options.width * 100)
-    )
+    result = cropper.crop(image, width=500, height=int(1024 / 1024 * 500)) #! Dont forget to back
 
     box = (
         result["top_crop"]["x"],
@@ -333,18 +306,19 @@ def main():
     )
     print("BOX COORDINATES: ", box)
 
-    if options.debug_file:
-        analyse_image = result.pop("analyse_image")
-        cropper.debug_crop(analyse_image, result["top_crop"]).save(options.debug_file)
-        print(json.dumps(result))
+    # if options.debug_file:
+    #     analyse_image = result.pop("analyse_image")
+    #     cropper.debug_crop(analyse_image, result["top_crop"]).save(options.debug_file)
+    #     print(json.dumps(result))
 
     print("TYPE AND SHAPE", type(image), image.shape)
 
-    image = T.ToPILImage()(image)  # .crop(box).save(options.outputfile)
+    image = T.ToPILImage()(image[7])  # .crop(box).save(options.outputfile)
 
     cropped_image = image.crop(box)
-    cropped_image.thumbnail((options.width, options.height), Image.ANTIALIAS)
-    cropped_image.save(options.outputfile, "JPEG", quality=90)
+    cropped_image.show()
+    # cropped_image.thumbnail((options.width, options.height), Image.ANTIALIAS)
+    # cropped_image.save(options.outputfile, "JPEG", quality=90)
 
 
 if __name__ == "__main__":
